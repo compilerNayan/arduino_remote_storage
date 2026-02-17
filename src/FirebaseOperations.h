@@ -153,7 +153,7 @@ class FirebaseOperations : public IFirebaseOperations {
         firebaseBegun = false;
     }
 
-    /** Convert timestampMs (millis since boot) to ISO8601 "2026-02-17T13:05:00.123Z". */
+    /** Convert timestampMs (millis since boot) to Firebase-safe key "2026-02-17T13-05-00_123Z" (underscore, no period; period is invalid in Firebase paths). */
     Private StdString MillisToIso8601(ULong timestampMs) {
         if (epochOffsetMs_ == 0) {
             time_t now = time(nullptr);
@@ -172,7 +172,7 @@ class FirebaseOperations : public IFirebaseOperations {
         size_t n = strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", t);
         if (n == 0) return "millis_" + std::to_string(timestampMs);
         char out[40];
-        snprintf(out, sizeof(out), "%s.%03uZ", buf, ms);
+        snprintf(out, sizeof(out), "%s_%03uZ", buf, ms);
         return StdString(out);
     }
 
