@@ -5,6 +5,7 @@
 #include "IFirebaseOperations.h"
 #include <INetworkStatusProvider.h>
 #include <ILogger.h>
+#include <IDeviceDetails.h>
 
 #define Vector __FirebaseVector
 #include <Arduino.h>
@@ -15,11 +16,14 @@
 #include <atomic>
 #include <ctime>
 
+/* @Component */
 class FirebaseOperations : public IFirebaseOperations {
     /* @Autowired */
     Private INetworkStatusProviderPtr networkStatusProvider_;
     /* @Autowired */
     Private ILoggerPtr logger;
+    /* @Autowired */
+    Private IDeviceDetailsPtr deviceDetails_;
     Private Int storedWifiConnectionId_{0};
 
     Private FirebaseData fbdo;
@@ -36,10 +40,15 @@ class FirebaseOperations : public IFirebaseOperations {
 
     Private Static const char* kDatabaseUrl() { return "https://smart-switch-da084-default-rtdb.asia-southeast1.firebasedatabase.app"; }
     Private Static const char* kLegacyToken() { return "Aj54Sf7eKxCaMIgTgEX4YotS8wbVpzmspnvK6X2C"; }
-    Private Static const char* kCommandsPath() { return "/commands"; }
     Private Static const unsigned long kDeleteIntervalMs = 60000;
     Private unsigned long lastDeleteMillis_ = 0;
-    Private Static const char* kLogsPath() { return "/logs"; }
+
+    Private StdString GetCommandsPath() const {
+        return "/" + deviceDetails_->GetSerialNumber() + "/commands";
+    }
+    Private StdString GetLogsPath() const {
+        return "/" + deviceDetails_->GetSerialNumber() + "/logs";
+    }
     /** UTC ms when millis() was 0; set on first PublishLogs when time() is available. */
     Private ULong epochOffsetMs_{0};
 
@@ -61,7 +70,8 @@ class FirebaseOperations : public IFirebaseOperations {
 
     Private Bool EnsureStreamBegin() {
         if (streamBegun_) return true;
-        if (!Firebase.RTDB.beginStream(&fbdo, kCommandsPath())) {
+        StdString cmdPath = GetCommandsPath();
+        if (!Firebase.RTDB.beginStream(&fbdo, cmdPath.c_str())) {
             return false;
         }
         streamBegun_ = true;
@@ -172,7 +182,8 @@ class FirebaseOperations : public IFirebaseOperations {
         if (!fbdo.streamAvailable()) {
             unsigned long now = millis();
             if (now - lastDeleteMillis_ >= kDeleteIntervalMs) {
-                if (!Firebase.RTDB.deleteNode(&fbdoDel, kCommandsPath())) {
+                StdString cmdPath = GetCommandsPath();
+                if (!Firebase.RTDB.deleteNode(&fbdoDel, cmdPath.c_str())) {
                     OnErrorAndScheduleRefresh(fbdoDel.errorReason().c_str());
                 } else {
                     lastDeleteMillis_ = now;
@@ -190,7 +201,8 @@ class FirebaseOperations : public IFirebaseOperations {
 
         unsigned long now = millis();
         if (now - lastDeleteMillis_ >= kDeleteIntervalMs) {
-            if (!Firebase.RTDB.deleteNode(&fbdoDel, kCommandsPath())) {
+            StdString cmdPath = GetCommandsPath();
+            if (!Firebase.RTDB.deleteNode(&fbdoDel, cmdPath.c_str())) {
                 OnErrorAndScheduleRefresh(fbdoDel.errorReason().c_str());
             } else {
                 lastDeleteMillis_ = now;
@@ -246,7 +258,7 @@ class FirebaseOperations : public IFirebaseOperations {
             StdString key = MillisToIso8601(pair.first);
             const StdString& message = pair.second;
             if (message.empty()) continue;
-            StdString path = StdString(kLogsPath()) + "/" + key;
+            StdString path = GetLogsPath() + "/" + key;
             if (!Firebase.RTDB.setString(&fbdoLog, path.c_str(), message.c_str())) {
                 logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed for " + key + ": " + StdString(fbdoLog.errorReason().c_str())));
                 ok = false;
