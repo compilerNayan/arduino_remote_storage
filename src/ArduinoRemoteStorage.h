@@ -4,6 +4,7 @@
 
 #include "IArduinoRemoteStorage.h"
 #include "IFirebaseOperations.h"
+#include "FirebaseOperations.h"
 #include "ILogBuffer.h"
 #include <Arduino.h>
 
@@ -12,8 +13,10 @@
 
 /* @Component */
 class ArduinoRemoteStorage : public IArduinoRemoteStorage {
-    /* @Autowired */
+
     Private IFirebaseOperationsPtr firebaseOperations;
+    Private std::mutex firebaseOperationsMutex_;
+
     /* @Autowired */
     Private ILogBufferPtr logBuffer;
 
@@ -35,16 +38,35 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
         }
     }
 
-    Public ArduinoRemoteStorage() = default;
+    Public ArduinoRemoteStorage() {
+        ResetFirebaseOperations();
+    }
 
     Public Virtual ~ArduinoRemoteStorage() override = default;
+
+    /** Thread-safe: replaces firebaseOperations with a new FirebaseOperations instance. */
+    Public Void ResetFirebaseOperations() {
+        std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
+        firebaseOperations = std::make_shared<FirebaseOperations>();
+    }
 
     Public StdString GetCommand() override {
         StdString out;
         if (TryDequeue(out)) {
             return out;
         }
-        StdVector<StdString> commands = firebaseOperations->RetrieveCommands();
+        IFirebaseOperationsPtr ops;
+        {
+            std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
+            ops = firebaseOperations;
+        }
+        if (!ops) return StdString();
+        if (ops->IsDirty()) {
+            if (ops->IsOperationInProgress()) return StdString();
+            ResetFirebaseOperations();
+            return StdString();
+        }
+        StdVector<StdString> commands = ops->RetrieveCommands();
         EnqueueAll(commands);
         if (TryDequeue(out)) {
             return out;
@@ -55,9 +77,26 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
     Public Void PublishLogs() override {
         StdMap<ULong, StdString> logs = logBuffer->TakeLogs();
         if (logs.empty()) return;
-        if (!firebaseOperations->PublishLogs(logs)) {
-            logBuffer->AddLogs(logs);
+        IFirebaseOperationsPtr ops;
+        {
+            std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
+            ops = firebaseOperations;
         }
+        if (!ops) {
+            logBuffer->AddLogs(logs);
+            return;
+        }
+        if (ops->IsDirty()) {
+            if (ops->IsOperationInProgress()) {
+                logBuffer->AddLogs(logs);
+                return;
+            }
+            ResetFirebaseOperations();
+            logBuffer->AddLogs(logs);
+            return;
+        }
+        Bool ok = ops->PublishLogs(logs);
+        if (!ok) logBuffer->AddLogs(logs);
     }
 };
 
