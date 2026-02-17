@@ -12,6 +12,7 @@
 #undef Vector
 
 #include <atomic>
+#include <ctime>
 
 /* @Component */
 class FirebaseOperations : public IFirebaseOperations {
@@ -21,6 +22,7 @@ class FirebaseOperations : public IFirebaseOperations {
 
     Private FirebaseData fbdo;
     Private FirebaseData fbdoDel;
+    Private FirebaseData fbdoLog;
     Private FirebaseAuth auth;
     Private FirebaseConfig config;
     Private Bool firebaseBegun = false;
@@ -34,6 +36,9 @@ class FirebaseOperations : public IFirebaseOperations {
     Private Static const char* kPath() { return "/"; }
     Private Static const unsigned long kDeleteIntervalMs = 60000;
     Private unsigned long lastDeleteMillis_ = 0;
+    Private Static const char* kLogsPath() { return "/logs"; }
+    /** UTC ms when millis() was 0; set on first PublishLogs when time() is available. */
+    Private ULong epochOffsetMs_{0};
 
     Private Void EnsureFirebaseBegin() {
         if (firebaseBegun) return;
@@ -43,6 +48,8 @@ class FirebaseOperations : public IFirebaseOperations {
         fbdo.setResponseSize(2048);
         fbdoDel.setBSSLBufferSize(4096, 1024);
         fbdoDel.setResponseSize(2048);
+        fbdoLog.setBSSLBufferSize(4096, 1024);
+        fbdoLog.setResponseSize(2048);
         Firebase.begin(&config, &auth);
         Firebase.reconnectWiFi(true);
         firebaseBegun = true;
@@ -146,6 +153,29 @@ class FirebaseOperations : public IFirebaseOperations {
         firebaseBegun = false;
     }
 
+    /** Convert timestampMs (millis since boot) to ISO8601 "2026-02-17T13:05:00.123Z". */
+    Private StdString MillisToIso8601(ULong timestampMs) {
+        if (epochOffsetMs_ == 0) {
+            time_t now = time(nullptr);
+            if (now > 0) {
+                epochOffsetMs_ = (ULong)now * 1000 - timestampMs;
+            } else {
+                return "millis_" + std::to_string(timestampMs);
+            }
+        }
+        ULong utcMs = epochOffsetMs_ + timestampMs;
+        time_t sec = static_cast<time_t>(utcMs / 1000);
+        unsigned int ms = static_cast<unsigned int>(utcMs % 1000);
+        struct tm* t = gmtime(&sec);
+        if (!t) return "millis_" + std::to_string(timestampMs);
+        char buf[32];
+        size_t n = strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", t);
+        if (n == 0) return "millis_" + std::to_string(timestampMs);
+        char out[40];
+        snprintf(out, sizeof(out), "%s.%03uZ", buf, ms);
+        return StdString(out);
+    }
+
     /** Returns all key:value pairs from one stream read. No queue; returns full list. */
     Private StdVector<StdString> RetrieveCommandsFromFirebase() {
         StdVector<StdString> emptyResult;
@@ -223,6 +253,28 @@ class FirebaseOperations : public IFirebaseOperations {
             return StdVector<StdString>();
         }
         return RetrieveCommandsFromFirebase();
+    }
+
+    Public Bool PublishLogs(const StdMap<ULong, StdString>& logs) override {
+        if (logs.empty()) return true;
+        if (!EnsureNetworkAndFirebaseMatch()) return false;
+        EnsureFirebaseBegin();
+        if (!Firebase.ready()) return false;
+        Bool ok = true;
+        for (const auto& pair : logs) {
+            StdString key = MillisToIso8601(pair.first);
+            const StdString& message = pair.second;
+            if (message.empty()) continue;
+            StdString path = StdString(kLogsPath()) + "/" + key;
+            if (!Firebase.RTDB.setString(&fbdoLog, path.c_str(), message.c_str())) {
+                Serial.print("[FirebaseOperations] PublishLogs failed for ");
+                Serial.print(key.c_str());
+                Serial.print(": ");
+                Serial.println(fbdoLog.errorReason().c_str());
+                ok = false;
+            }
+        }
+        return ok;
     }
 };
 
