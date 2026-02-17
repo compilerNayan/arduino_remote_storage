@@ -258,26 +258,19 @@ class FirebaseOperations : public IFirebaseOperations {
             ~ClearOp() { f.store(false); }
         } guard{operationInProgress_};
         if (!EnsureReady()) return FirebaseOperationResult::NotReady;
-        DynamicJsonDocument doc(16384);
-        JsonObject root = doc.to<JsonObject>();
+        Bool ok = true;
+        StdString basePath = GetLogsPath();
         for (const auto& pair : logs) {
             const StdString& message = pair.second;
             if (message.empty()) continue;
-            root[MillisToIso8601(pair.first).c_str()] = message.c_str();
+            StdString key = MillisToIso8601(pair.first);
+            StdString path = basePath + "/" + key;
+            if (!Firebase.RTDB.setString(&fbdoLog, path.c_str(), message.c_str())) {
+                logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed for " + key + ": " + StdString(fbdoLog.errorReason().c_str())));
+                ok = false;
+            }
         }
-        if (root.size() == 0) {
-            return FirebaseOperationResult::OperationSucceeded;
-        }
-        String jsonStr;
-        serializeJson(doc, jsonStr);
-        FirebaseJson fbJson;
-        fbJson.setJsonData(jsonStr);
-        StdString path = GetLogsPath();
-        if (!Firebase.RTDB.setJSON(&fbdoLog, path.c_str(), &fbJson)) {
-            logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed: " + StdString(fbdoLog.errorReason().c_str())));
-            return FirebaseOperationResult::Failed;
-        }
-        return FirebaseOperationResult::OperationSucceeded;
+        return ok ? FirebaseOperationResult::OperationSucceeded : FirebaseOperationResult::Failed;
     }
 
     /** Returns true if RetrieveCommands or PublishLogs is currently running. */
