@@ -216,28 +216,29 @@ class FirebaseOperations : public IFirebaseOperations {
         }
     }
 
-    Public StdVector<StdString> RetrieveCommands() override {
+    Public FirebaseOperationResult RetrieveCommands(StdVector<StdString>& out) override {
+        out.clear();
         if (operationInProgress_.exchange(true)) {
-            return StdVector<StdString>();
+            return FirebaseOperationResult::AnotherOperationInProgress;
         }
         struct ClearOp {
             std::atomic<bool>& f;
             ~ClearOp() { f.store(false); }
         } guard{operationInProgress_};
-        if (!EnsureReady()) return StdVector<StdString>();
-        return RetrieveCommandsFromFirebase();
+        if (!EnsureReady()) return FirebaseOperationResult::NotReady;
+        out = RetrieveCommandsFromFirebase();
+        return FirebaseOperationResult::OperationSucceeded;
     }
 
-    Public Bool PublishLogs(const StdMap<ULong, StdString>& logs) override {
-        if (logs.empty()) return true;
+    Public FirebaseOperationResult PublishLogs(const StdMap<ULong, StdString>& logs) override {
         if (operationInProgress_.exchange(true)) {
-            return false;
+            return FirebaseOperationResult::AnotherOperationInProgress;
         }
         struct ClearOp {
             std::atomic<bool>& f;
             ~ClearOp() { f.store(false); }
         } guard{operationInProgress_};
-        if (!EnsureReady()) return false;
+        if (!EnsureReady()) return FirebaseOperationResult::NotReady;
         Bool ok = true;
         for (const auto& pair : logs) {
             StdString key = MillisToIso8601(pair.first);
@@ -249,7 +250,7 @@ class FirebaseOperations : public IFirebaseOperations {
                 ok = false;
             }
         }
-        return ok;
+        return ok ? FirebaseOperationResult::OperationSucceeded : FirebaseOperationResult::Failed;
     }
 
     /** Returns true if RetrieveCommands or PublishLogs is currently running. */

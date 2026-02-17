@@ -50,33 +50,34 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
         firebaseOperations = std::make_shared<FirebaseOperations>();
     }
 
-    Public StdString GetCommand() override {
-        StdString out;
+    Public FirebaseOperationResult GetCommand(StdString& out) override {
+        out.clear();
         if (TryDequeue(out)) {
-            return out;
+            return FirebaseOperationResult::OperationSucceeded;
         }
         IFirebaseOperationsPtr ops;
         {
             std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
             ops = firebaseOperations;
         }
-        if (!ops) return StdString();
+        if (!ops) return FirebaseOperationResult::NotReady;
         if (ops->IsDirty()) {
-            if (ops->IsOperationInProgress()) return StdString();
+            if (ops->IsOperationInProgress()) return FirebaseOperationResult::AnotherOperationInProgress;
             ResetFirebaseOperations();
-            return StdString();
+            return FirebaseOperationResult::NotReady;
         }
-        StdVector<StdString> commands = ops->RetrieveCommands();
+        StdVector<StdString> commands;
+        FirebaseOperationResult res = ops->RetrieveCommands(commands);
+        if (res != FirebaseOperationResult::OperationSucceeded) return res;
         EnqueueAll(commands);
         if (TryDequeue(out)) {
-            return out;
+            return FirebaseOperationResult::OperationSucceeded;
         }
-        return StdString();
+        return FirebaseOperationResult::OperationSucceeded;
     }
 
-    Public Bool PublishLogs() override {
+    Public FirebaseOperationResult PublishLogs() override {
         StdMap<ULong, StdString> logs = logBuffer->TakeLogs();
-        if (logs.empty()) return true;
         IFirebaseOperationsPtr ops;
         {
             std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
@@ -84,20 +85,20 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
         }
         if (!ops) {
             logBuffer->AddLogs(logs);
-            return false;
+            return FirebaseOperationResult::NotReady;
         }
         if (ops->IsDirty()) {
             if (ops->IsOperationInProgress()) {
                 logBuffer->AddLogs(logs);
-                return false;
+                return FirebaseOperationResult::AnotherOperationInProgress;
             }
             ResetFirebaseOperations();
             logBuffer->AddLogs(logs);
-            return false;
+            return FirebaseOperationResult::NotReady;
         }
-        Bool ok = ops->PublishLogs(logs);
-        if (!ok) logBuffer->AddLogs(logs);
-        return ok;
+        FirebaseOperationResult res = ops->PublishLogs(logs);
+        if (res != FirebaseOperationResult::OperationSucceeded) logBuffer->AddLogs(logs);
+        return res;
     }
 };
 
