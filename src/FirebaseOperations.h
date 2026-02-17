@@ -142,17 +142,22 @@ class FirebaseOperations : public IFirebaseOperations {
         return Firebase.ready();
     }
 
-    /** Convert timestampMs (millis since boot) to Firebase-safe key "2026-02-17T13-05-00_123Z" (underscore, no period; period is invalid in Firebase paths). */
+    /** Convert timestampMs to Firebase-safe key "2026-02-17T13-05-00_123Z". Accepts UTC ms (>= 1e12) or millis since boot (legacy). */
     Private StdString MillisToIso8601(ULong timestampMs) {
-        if (epochOffsetMs_ == 0) {
-            time_t now = time(nullptr);
-            if (now > 0) {
-                epochOffsetMs_ = (ULong)now * 1000 - timestampMs;
-            } else {
-                return "millis_" + std::to_string(timestampMs);
+        ULong utcMs;
+        if (timestampMs >= 1000000000000ULL) {
+            utcMs = timestampMs;
+        } else {
+            if (epochOffsetMs_ == 0) {
+                time_t now = time(nullptr);
+                if (now > 0) {
+                    epochOffsetMs_ = (ULong)now * 1000 - timestampMs;
+                } else {
+                    return "millis_" + std::to_string(timestampMs);
+                }
             }
+            utcMs = epochOffsetMs_ + timestampMs;
         }
-        ULong utcMs = epochOffsetMs_ + timestampMs;
         time_t sec = static_cast<time_t>(utcMs / 1000);
         unsigned int ms = static_cast<unsigned int>(utcMs % 1000);
         struct tm* t = gmtime(&sec);
