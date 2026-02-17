@@ -1,0 +1,18 @@
+{
+  "name": "arduino_remote_storage",
+  "version": "1.0.0",
+  "description": "PlatformIO library that provides arduino_core for remote storage utilities",
+  "keywords": ["arduino", "storage", "utility"],
+  "authors": [{ "name": "Nayan" }],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/compilerNayan/arduino_remote_storage.git"
+  },
+  "dependencies": {
+    "arduino_core": "https://github.com/compilerNayan/arduino_core.git",
+    "compilerNayan/cpp_core": "https://github.com/compilerNayan/cpp_core.git"
+  },
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": "*"
+}
