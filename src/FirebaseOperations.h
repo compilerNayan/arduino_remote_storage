@@ -115,8 +115,10 @@ class FirebaseOperations : public IFirebaseOperations {
         }
         Int currentId = networkStatusProvider_->GetWifiConnectionId();
         if (currentId != storedWifiConnectionId_) {
-            logger->Info(Tag::Untagged, StdString("[FirebaseOperations] WiFi connection id changed (" + std::to_string(storedWifiConnectionId_) + " -> " + std::to_string(currentId) + "); refreshing Firebase connection"));
-            dirty_.store(true);
+            if (storedWifiConnectionId_ != 0) {
+                logger->Info(Tag::Untagged, StdString("[FirebaseOperations] WiFi connection id changed (" + std::to_string(storedWifiConnectionId_) + " -> " + std::to_string(currentId) + "); refreshing Firebase connection"));
+                dirty_.store(true);
+            }
             storedWifiConnectionId_ = currentId;
         }
         return true;
