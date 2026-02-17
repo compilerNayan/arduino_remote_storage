@@ -74,9 +74,9 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
         return StdString();
     }
 
-    Public Void PublishLogs() override {
+    Public Bool PublishLogs() override {
         StdMap<ULong, StdString> logs = logBuffer->TakeLogs();
-        if (logs.empty()) return;
+        if (logs.empty()) return true;
         IFirebaseOperationsPtr ops;
         {
             std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
@@ -84,19 +84,20 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
         }
         if (!ops) {
             logBuffer->AddLogs(logs);
-            return;
+            return false;
         }
         if (ops->IsDirty()) {
             if (ops->IsOperationInProgress()) {
                 logBuffer->AddLogs(logs);
-                return;
+                return false;
             }
             ResetFirebaseOperations();
             logBuffer->AddLogs(logs);
-            return;
+            return false;
         }
         Bool ok = ops->PublishLogs(logs);
         if (!ok) logBuffer->AddLogs(logs);
+        return ok;
     }
 };
 
