@@ -4,6 +4,7 @@
 
 #include "IArduinoRemoteStorage.h"
 #include "IFirebaseOperations.h"
+#include "ILogBuffer.h"
 #include <Arduino.h>
 
 #include <queue>
@@ -13,6 +14,8 @@
 class ArduinoRemoteStorage : public IArduinoRemoteStorage {
     /* @Autowired */
     Private IFirebaseOperationsPtr firebaseOperations;
+    /* @Autowired */
+    Private ILogBufferPtr logBuffer;
 
     Private std::queue<StdString> requestQueue_;
     Private std::mutex requestQueueMutex_;
@@ -49,7 +52,13 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
         return StdString();
     }
 
-    Public Void StoreLog(ULong timestampMs, const StdString& message) override {}
+    Public Void PublishLogs() override {
+        StdMap<ULong, StdString> logs = logBuffer->TakeLogs();
+        if (logs.empty()) return;
+        if (!firebaseOperations->PublishLogs(logs)) {
+            logBuffer->AddLogs(logs);
+        }
+    }
 };
 
 #endif // ARDUINO_REMOTE_STORAGE_H
