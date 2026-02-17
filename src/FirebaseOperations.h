@@ -122,6 +122,7 @@ class FirebaseOperations : public IFirebaseOperations {
     }
 
     Private Void RefreshConnection() {
+        logger->Info(Tag::Untagged, StdString("[FirebaseOperations] Refreshing Firebase connection"));
         while (retrieving_.load(std::memory_order_relaxed)) {
             delay(10);
         }
@@ -177,10 +178,6 @@ class FirebaseOperations : public IFirebaseOperations {
     /** Returns all key:value pairs from one stream read. No queue; returns full list. */
     Private StdVector<StdString> RetrieveCommandsFromFirebase() {
         StdVector<StdString> emptyResult;
-
-        if (pendingRefresh_.exchange(false)) {
-            RefreshConnection();
-        }
 
         while (refreshing_.load(std::memory_order_relaxed)) {
             delay(10);
@@ -247,6 +244,11 @@ class FirebaseOperations : public IFirebaseOperations {
     Public Virtual ~FirebaseOperations() override = default;
 
     Public StdVector<StdString> RetrieveCommands() override {
+        // Honor pending refresh first so we don't rely on EnsureNetworkAndFirebaseMatch() being true
+        // (e.g. after timeouts, IsInternetConnected may be false and we'd never reach the refresh in RetrieveCommandsFromFirebase).
+        if (pendingRefresh_.exchange(false)) {
+            RefreshConnection();
+        }
         if (!EnsureNetworkAndFirebaseMatch()) {
             return StdVector<StdString>();
         }
