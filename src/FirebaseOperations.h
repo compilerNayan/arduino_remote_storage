@@ -4,6 +4,7 @@
 
 #include "IFirebaseOperations.h"
 #include <INetworkStatusProvider.h>
+#include <ILogger.h>
 
 #define Vector __FirebaseVector
 #include <Arduino.h>
@@ -18,6 +19,8 @@
 class FirebaseOperations : public IFirebaseOperations {
     /* @Autowired */
     Private INetworkStatusProviderPtr networkStatusProvider_;
+    /* @Autowired */
+    Private ILoggerPtr logger;
     Private Int storedWifiConnectionId_{0};
 
     Private FirebaseData fbdo;
@@ -93,8 +96,7 @@ class FirebaseOperations : public IFirebaseOperations {
     }
 
     Private Void OnErrorAndScheduleRefresh(const char* msg) {
-        Serial.print("[FirebaseOperations] RetrieveCommands failed: ");
-        Serial.println(msg);
+        logger->Error(Tag::Untagged, StdString(std::string("[FirebaseOperations] RetrieveCommands failed: ") + msg));
         pendingRefresh_.store(true);
     }
 
@@ -112,11 +114,7 @@ class FirebaseOperations : public IFirebaseOperations {
         }
         Int currentId = networkStatusProvider_->GetWifiConnectionId();
         if (currentId != storedWifiConnectionId_) {
-            Serial.print("[FirebaseOperations] WiFi connection id changed (");
-            Serial.print(storedWifiConnectionId_);
-            Serial.print(" -> ");
-            Serial.print(currentId);
-            Serial.println("); refreshing Firebase connection");
+            logger->Info(Tag::Untagged, StdString("[FirebaseOperations] WiFi connection id changed (" + std::to_string(storedWifiConnectionId_) + " -> " + std::to_string(currentId) + "); refreshing Firebase connection"));
             RefreshConnection();
             storedWifiConnectionId_ = currentId;
         }
@@ -267,10 +265,7 @@ class FirebaseOperations : public IFirebaseOperations {
             if (message.empty()) continue;
             StdString path = StdString(kLogsPath()) + "/" + key;
             if (!Firebase.RTDB.setString(&fbdoLog, path.c_str(), message.c_str())) {
-                Serial.print("[FirebaseOperations] PublishLogs failed for ");
-                Serial.print(key.c_str());
-                Serial.print(": ");
-                Serial.println(fbdoLog.errorReason().c_str());
+                logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed for " + key + ": " + StdString(fbdoLog.errorReason().c_str())));
                 ok = false;
             }
         }
