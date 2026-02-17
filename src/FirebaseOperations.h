@@ -139,7 +139,11 @@ class FirebaseOperations : public IFirebaseOperations {
         if (dirty_.load(std::memory_order_relaxed)) return false;
         if (!EnsureNetworkAndFirebaseMatch()) return false;
         EnsureFirebaseBegin();
-        return Firebase.ready();
+        if (!Firebase.ready()) {
+            dirty_.store(true);
+            return false;
+        }
+        return true;
     }
 
     /** Convert timestampMs to Firebase-safe key "2026-02-17T13-05-00_123Z". Accepts UTC ms (>= 1e12) or millis since boot (legacy). */
@@ -267,6 +271,7 @@ class FirebaseOperations : public IFirebaseOperations {
             StdString path = basePath + "/" + key;
             if (!Firebase.RTDB.setString(&fbdoLog, path.c_str(), message.c_str())) {
                 logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed for " + key + ": " + StdString(fbdoLog.errorReason().c_str())));
+                dirty_.store(true);
                 ok = false;
             }
         }
