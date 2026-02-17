@@ -6,6 +6,7 @@
 #include "IFirebaseOperations.h"
 #include "FirebaseOperations.h"
 #include "ILogBuffer.h"
+#include <ILogger.h>
 #include <Arduino.h>
 
 #include <queue>
@@ -19,6 +20,9 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
 
     /* @Autowired */
     Private ILogBufferPtr logBuffer;
+
+    /* @Autowired */
+    Private ILoggerPtr logger;
 
     Private std::queue<StdString> requestQueue_;
     Private std::mutex requestQueueMutex_;
@@ -46,6 +50,7 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
 
     /** Thread-safe: replaces firebaseOperations with a new FirebaseOperations instance. */
     Public Void ResetFirebaseOperations() {
+        logger->Info(Tag::Untagged, StdString("[ArduinoRemoteStorage] Resetting Firebase operations."));
         std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
         firebaseOperations = std::make_shared<FirebaseOperations>();
     }
