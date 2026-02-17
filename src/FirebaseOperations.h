@@ -15,7 +15,6 @@
 #include <atomic>
 #include <ctime>
 
-/* @Component */
 class FirebaseOperations : public IFirebaseOperations {
     /* @Autowired */
     Private INetworkStatusProviderPtr networkStatusProvider_;
@@ -30,9 +29,10 @@ class FirebaseOperations : public IFirebaseOperations {
     Private FirebaseConfig config;
     Private Bool firebaseBegun = false;
     Private Bool streamBegun_ = false;
-    Private std::atomic<bool> retrieving_{false};
-    Private std::atomic<bool> refreshing_{false};
-    Private std::atomic<bool> pendingRefresh_{false};
+    /** Only one of RetrieveCommands or PublishLogs may run at a time. */
+    Private std::atomic<bool> operationInProgress_{false};
+    /** When true, all public methods return default/empty without doing work. Set on any error; clear via ResetConnection(). */
+    Private std::atomic<bool> dirty_{false};
 
     Private Static const char* kDatabaseUrl() { return "https://smart-switch-da084-default-rtdb.asia-southeast1.firebasedatabase.app"; }
     Private Static const char* kLegacyToken() { return "Aj54Sf7eKxCaMIgTgEX4YotS8wbVpzmspnvK6X2C"; }
@@ -97,59 +97,37 @@ class FirebaseOperations : public IFirebaseOperations {
 
     Private Void OnErrorAndScheduleRefresh(const char* msg) {
         logger->Error(Tag::Untagged, StdString(std::string("[FirebaseOperations] RetrieveCommands failed: ") + msg));
-        pendingRefresh_.store(true);
+        dirty_.store(true);
     }
 
     Private Bool EnsureNetworkAndFirebaseMatch() {
         if (!networkStatusProvider_) {
+            dirty_.store(true);
             return false;
         }
         if (!networkStatusProvider_->IsWiFiConnected()) {
-            DismissConnection();
+            dirty_.store(true);
             return false;
         }
         if (!networkStatusProvider_->IsInternetConnected()) {
-            DismissConnection();
+            dirty_.store(true);
             return false;
         }
         Int currentId = networkStatusProvider_->GetWifiConnectionId();
         if (currentId != storedWifiConnectionId_) {
             logger->Info(Tag::Untagged, StdString("[FirebaseOperations] WiFi connection id changed (" + std::to_string(storedWifiConnectionId_) + " -> " + std::to_string(currentId) + "); refreshing Firebase connection"));
-            RefreshConnection();
+            dirty_.store(true);
             storedWifiConnectionId_ = currentId;
         }
         return true;
     }
 
-    Private Void RefreshConnection() {
-        logger->Info(Tag::Untagged, StdString("[FirebaseOperations] Refreshing Firebase connection"));
-        while (retrieving_.load(std::memory_order_relaxed)) {
-            delay(10);
-        }
-        refreshing_.store(true, std::memory_order_release);
-        struct ClearRefreshing {
-            std::atomic<bool>& f;
-            ~ClearRefreshing() { f.store(false); }
-        } guard{refreshing_};
-
-        Firebase.RTDB.endStream(&fbdo);
-        streamBegun_ = false;
-        firebaseBegun = false;
-        delay(200);
-
+    /** Returns false if dirty, network/Firebase mismatch, or Firebase not ready. Otherwise ensures Firebase begun and returns true. */
+    Private Bool EnsureReady() {
+        if (dirty_.load(std::memory_order_relaxed)) return false;
+        if (!EnsureNetworkAndFirebaseMatch()) return false;
         EnsureFirebaseBegin();
-        if (Firebase.ready()) {
-            EnsureStreamBegin();
-        }
-    }
-
-    Private Void DismissConnection() {
-        while (retrieving_.load(std::memory_order_relaxed)) {
-            delay(10);
-        }
-        Firebase.RTDB.endStream(&fbdo);
-        streamBegun_ = false;
-        firebaseBegun = false;
+        return Firebase.ready();
     }
 
     /** Convert timestampMs (millis since boot) to Firebase-safe key "2026-02-17T13-05-00_123Z" (underscore, no period; period is invalid in Firebase paths). */
@@ -175,27 +153,9 @@ class FirebaseOperations : public IFirebaseOperations {
         return StdString(out);
     }
 
-    /** Returns all key:value pairs from one stream read. No queue; returns full list. */
+    /** Returns all key:value pairs from one stream read. No queue; returns full list. Call only while operationInProgress_ is held. */
     Private StdVector<StdString> RetrieveCommandsFromFirebase() {
         StdVector<StdString> emptyResult;
-
-        while (refreshing_.load(std::memory_order_relaxed)) {
-            delay(10);
-        }
-
-        if (retrieving_.exchange(true)) {
-            return emptyResult;
-        }
-        struct ClearFlag {
-            std::atomic<bool>& f;
-            ~ClearFlag() { f.store(false); }
-        } guard{retrieving_};
-
-        EnsureFirebaseBegin();
-        if (!Firebase.ready()) {
-            OnErrorAndScheduleRefresh("Firebase not ready");
-            return emptyResult;
-        }
 
         if (!EnsureStreamBegin()) {
             OnErrorAndScheduleRefresh("beginStream failed");
@@ -241,25 +201,43 @@ class FirebaseOperations : public IFirebaseOperations {
 
     Public FirebaseOperations() = default;
 
-    Public Virtual ~FirebaseOperations() override = default;
+    Public Virtual ~FirebaseOperations() override {
+        dirty_.store(true);
+        const ULong kShutdownWaitMs = 3000u;
+        ULong deadline = (ULong)millis() + kShutdownWaitMs;
+        while (operationInProgress_.load(std::memory_order_relaxed) && (ULong)millis() < deadline) {
+            delay(10);
+        }
+        if (streamBegun_ || firebaseBegun) {
+            Firebase.RTDB.endStream(&fbdo);
+            streamBegun_ = false;
+            firebaseBegun = false;
+            delay(100);
+        }
+    }
 
     Public StdVector<StdString> RetrieveCommands() override {
-        // Honor pending refresh first so we don't rely on EnsureNetworkAndFirebaseMatch() being true
-        // (e.g. after timeouts, IsInternetConnected may be false and we'd never reach the refresh in RetrieveCommandsFromFirebase).
-        if (pendingRefresh_.exchange(false)) {
-            RefreshConnection();
-        }
-        if (!EnsureNetworkAndFirebaseMatch()) {
+        if (operationInProgress_.exchange(true)) {
             return StdVector<StdString>();
         }
+        struct ClearOp {
+            std::atomic<bool>& f;
+            ~ClearOp() { f.store(false); }
+        } guard{operationInProgress_};
+        if (!EnsureReady()) return StdVector<StdString>();
         return RetrieveCommandsFromFirebase();
     }
 
     Public Bool PublishLogs(const StdMap<ULong, StdString>& logs) override {
         if (logs.empty()) return true;
-        if (!EnsureNetworkAndFirebaseMatch()) return false;
-        EnsureFirebaseBegin();
-        if (!Firebase.ready()) return false;
+        if (operationInProgress_.exchange(true)) {
+            return false;
+        }
+        struct ClearOp {
+            std::atomic<bool>& f;
+            ~ClearOp() { f.store(false); }
+        } guard{operationInProgress_};
+        if (!EnsureReady()) return false;
         Bool ok = true;
         for (const auto& pair : logs) {
             StdString key = MillisToIso8601(pair.first);
@@ -272,6 +250,16 @@ class FirebaseOperations : public IFirebaseOperations {
             }
         }
         return ok;
+    }
+
+    /** Returns true if RetrieveCommands or PublishLogs is currently running. */
+    Public Virtual Bool IsOperationInProgress() const override {
+        return operationInProgress_.load(std::memory_order_relaxed);
+    }
+
+    /** Returns true if the instance is dirty (e.g. after an error); public methods will return default/empty until reset. */
+    Public Virtual Bool IsDirty() const override {
+        return dirty_.load(std::memory_order_relaxed);
     }
 };
 
