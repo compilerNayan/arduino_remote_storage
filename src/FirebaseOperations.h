@@ -146,18 +146,18 @@ class FirebaseOperations : public IFirebaseOperations {
         return true;
     }
 
-    /** Convert timestampMs to Firebase-safe key "2026-02-17T13-05-00_123Z". Accepts UTC ms (>= 1e12) or millis since boot (legacy). */
-    Private StdString MillisToIso8601(ULong timestampMs) {
-        ULong utcMs;
+    /** Convert key (UTC ms or sec*1000+seq) to Firebase-safe key "2026-02-17T13-05-00_123Z". Accepts ULongLong. */
+    Private StdString MillisToIso8601(ULongLong timestampMs) {
+        ULongLong utcMs;
         if (timestampMs >= 1000000000000ULL) {
             utcMs = timestampMs;
         } else {
             if (epochOffsetMs_ == 0) {
                 time_t now = time(nullptr);
                 if (now > 0) {
-                    epochOffsetMs_ = (ULong)now * 1000 - timestampMs;
+                    epochOffsetMs_ = (ULong)now * 1000 - (ULong)timestampMs;
                 } else {
-                    return "millis_" + std::to_string(timestampMs);
+                    return "millis_" + std::to_string((unsigned long long)timestampMs);
                 }
             }
             utcMs = epochOffsetMs_ + timestampMs;
@@ -165,10 +165,10 @@ class FirebaseOperations : public IFirebaseOperations {
         time_t sec = static_cast<time_t>(utcMs / 1000);
         unsigned int ms = static_cast<unsigned int>(utcMs % 1000);
         struct tm* t = gmtime(&sec);
-        if (!t) return "millis_" + std::to_string(timestampMs);
+        if (!t) return "millis_" + std::to_string((unsigned long long)timestampMs);
         char buf[32];
         size_t n = strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", t);
-        if (n == 0) return "millis_" + std::to_string(timestampMs);
+        if (n == 0) return "millis_" + std::to_string((unsigned long long)timestampMs);
         char out[40];
         snprintf(out, sizeof(out), "%s_%03uZ", buf, ms);
         return StdString(out);
@@ -253,7 +253,7 @@ class FirebaseOperations : public IFirebaseOperations {
         return FirebaseOperationResult::OperationSucceeded;
     }
 
-    Public FirebaseOperationResult PublishLogs(const StdMap<ULong, StdString>& logs) override {
+    Public FirebaseOperationResult PublishLogs(const StdMap<ULongLong, StdString>& logs) override {
         if (operationInProgress_.exchange(true)) {
             return FirebaseOperationResult::AnotherOperationInProgress;
         }

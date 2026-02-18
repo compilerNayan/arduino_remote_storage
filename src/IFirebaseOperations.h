@@ -20,8 +20,8 @@ class IFirebaseOperations {
     /** Retrieves commands from Firebase. @param out Filled with list of "key:value" strings. */
     Public Virtual FirebaseOperationResult RetrieveCommands(StdVector<StdString>& out) = 0;
 
-    /** Publish logs to Firebase at /logs. Map key = timestamp (e.g. millis()), value = message. Keys are written as ISO8601. */
-    Public Virtual FirebaseOperationResult PublishLogs(const StdMap<ULong, StdString>& logs) = 0;
+    /** Publish logs to Firebase at /logs. Map key = unique timestamp+seq (ULongLong), value = message. Keys are written as ISO8601. */
+    Public Virtual FirebaseOperationResult PublishLogs(const StdMap<ULongLong, StdString>& logs) = 0;
 
     /** Returns true if RetrieveCommands or PublishLogs is currently running. */
     Public Virtual Bool IsOperationInProgress() const = 0;

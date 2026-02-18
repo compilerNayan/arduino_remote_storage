@@ -10,7 +10,7 @@ class LogBuffer : public ILogBuffer {
     Private Static const Size kMaxRecordCount = 1500;   // ~100 KB
     Private Static const Size kTrimRecordCount = 300;   // ~20 KB
 
-    Private StdMap<ULong, StdString> logs_;
+    Private StdMap<ULongLong, StdString> logs_;
     Private std::mutex mutex_;
 
     /** If count exceeds kMaxRecordCount, remove oldest kTrimRecordCount entries. O(trim count). */
@@ -27,13 +27,13 @@ class LogBuffer : public ILogBuffer {
 
     Public Virtual ~LogBuffer() override = default;
 
-    Public Void AddLog(ULong timestampMs, const StdString& message) override {
+    Public Void AddLog(ULongLong keyTimestampMs, const StdString& message) override {
         std::lock_guard<std::mutex> lock(mutex_);
-        logs_[timestampMs] = message;
+        logs_[keyTimestampMs] = message;
         TrimIfOverCapacity();
     }
 
-    Public Void AddLogs(const StdMap<ULong, StdString>& logs) override {
+    Public Void AddLogs(const StdMap<ULongLong, StdString>& logs) override {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto& pair : logs) {
             logs_[pair.first] = pair.second;
@@ -41,9 +41,9 @@ class LogBuffer : public ILogBuffer {
         TrimIfOverCapacity();
     }
 
-    Public StdMap<ULong, StdString> TakeLogs() override {
+    Public StdMap<ULongLong, StdString> TakeLogs() override {
         std::lock_guard<std::mutex> lock(mutex_);
-        StdMap<ULong, StdString> out;
+        StdMap<ULongLong, StdString> out;
         out.swap(logs_);
         return out;
     }
