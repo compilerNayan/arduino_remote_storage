@@ -276,7 +276,10 @@ class FirebaseOperations : public IFirebaseOperations {
         serializeJson(doc, jsonStr);
         FirebaseJson fbJson;
         fbJson.setJsonData(jsonStr);
-        StdString path = GetLogsPath();
+        time_t nowSec = time(nullptr);
+        ULong nowMs = (nowSec != (time_t)-1) ? (ULong)nowSec * 1000ULL : (ULong)millis();
+        StdString uniqueKey = MillisToIso8601(nowMs);
+        StdString path = GetLogsPath() + "/" + uniqueKey;
         if (!Firebase.RTDB.setJSON(&fbdoLog, path.c_str(), &fbJson)) {
             logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed: " + StdString(fbdoLog.errorReason().c_str())));
             return FirebaseOperationResult::Failed;
