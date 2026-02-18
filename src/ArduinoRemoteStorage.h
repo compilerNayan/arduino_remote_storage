@@ -7,6 +7,7 @@
 #include "FirebaseOperations.h"
 #include "ILogBuffer.h"
 #include <ILogger.h>
+#include <INetworkStatusProvider.h>
 #include <Arduino.h>
 
 #include <queue>
@@ -23,6 +24,9 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
 
     /* @Autowired */
     Private ILoggerPtr logger;
+
+    /* @Autowired */
+    Private INetworkStatusProviderPtr networkStatusProvider_;
 
     Private std::queue<StdString> requestQueue_;
     Private std::mutex requestQueueMutex_;
@@ -48,8 +52,12 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
 
     Public Virtual ~ArduinoRemoteStorage() override = default;
 
-    /** Thread-safe: replaces firebaseOperations with a new FirebaseOperations instance. */
+    /** Thread-safe: replaces firebaseOperations with a new FirebaseOperations instance. Proceeds only if internet is available. */
     Public Void ResetFirebaseOperations() {
+        if (networkStatusProvider_ && !networkStatusProvider_->IsInternetConnected()) {
+            logger->Verbose(Tag::Untagged, StdString("[ArduinoRemoteStorage] Skipping Firebase reset: no internet."));
+            return;
+        }
         logger->Info(Tag::Untagged, StdString("[ArduinoRemoteStorage] Resetting Firebase operations."));
         std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
         firebaseOperations = std::make_shared<FirebaseOperations>();
