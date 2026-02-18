@@ -146,7 +146,7 @@ class FirebaseOperations : public IFirebaseOperations {
         return true;
     }
 
-    /** Convert key (UTC ms or sec*1000+seq) to Firebase-safe key "2026-02-17T13-05-00_123Z". Accepts ULongLong. */
+    /** Convert key (UTC ms or sec*1000+seq) to Firebase-safe key in local time "2026-02-17T18-30-00_123" (no Z; TZ set by DeviceTimeSyncNtp). */
     Private StdString MillisToIso8601(ULongLong timestampMs) {
         ULongLong utcMs;
         if (timestampMs >= 1000000000000ULL) {
@@ -164,13 +164,13 @@ class FirebaseOperations : public IFirebaseOperations {
         }
         time_t sec = static_cast<time_t>(utcMs / 1000);
         unsigned int ms = static_cast<unsigned int>(utcMs % 1000);
-        struct tm* t = gmtime(&sec);
+        struct tm* t = localtime(&sec);
         if (!t) return "millis_" + std::to_string((unsigned long long)timestampMs);
         char buf[32];
         size_t n = strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", t);
         if (n == 0) return "millis_" + std::to_string((unsigned long long)timestampMs);
         char out[40];
-        snprintf(out, sizeof(out), "%s_%03uZ", buf, ms);
+        snprintf(out, sizeof(out), "%s_%03u", buf, ms);
         return StdString(out);
     }
 
