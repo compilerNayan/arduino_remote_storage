@@ -73,6 +73,11 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
             std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
             ops = firebaseOperations;
         }
+        if (!ops) {
+            ResetFirebaseOperations();
+            std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
+            ops = firebaseOperations;
+        }
         if (!ops) return FirebaseOperationResult::NotReady;
         if (ops->IsDirty()) {
             if (ops->IsOperationInProgress()) return FirebaseOperationResult::AnotherOperationInProgress;
@@ -95,6 +100,13 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
         {
             std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
             ops = firebaseOperations;
+        }
+        if (!ops) {
+            ResetFirebaseOperations();
+            {
+                std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);
+                ops = firebaseOperations;
+            }
         }
         if (!ops) {
             logBuffer->AddLogs(logs);
