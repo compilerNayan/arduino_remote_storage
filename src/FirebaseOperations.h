@@ -282,6 +282,7 @@ class FirebaseOperations : public IFirebaseOperations {
         StdString path = GetLogsPath() + "/" + uniqueKey;
         if (!Firebase.RTDB.setJSON(&fbdoLog, path.c_str(), &fbJson)) {
             logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed: " + StdString(fbdoLog.errorReason().c_str())));
+            dirty_.store(true);
             return FirebaseOperationResult::Failed;
         }
         return FirebaseOperationResult::OperationSucceeded;
