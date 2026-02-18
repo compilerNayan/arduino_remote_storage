@@ -47,6 +47,18 @@ class LogBuffer : public ILogBuffer {
         out.swap(logs_);
         return out;
     }
+
+    Public StdMap<ULongLong, StdString> TakeLogsAtMost(Size maxCount) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        StdMap<ULongLong, StdString> out;
+        Size n = 0;
+        for (auto it = logs_.begin(); it != logs_.end() && n < maxCount; ) {
+            out[it->first] = it->second;
+            it = logs_.erase(it);
+            ++n;
+        }
+        return out;
+    }
 };
 
 #endif /* LOGBUFFER_H */

@@ -95,7 +95,8 @@ class ArduinoRemoteStorage : public IArduinoRemoteStorage {
     }
 
     Public FirebaseOperationResult PublishLogs() override {
-        StdMap<ULongLong, StdString> logs = logBuffer->TakeLogs();
+        Static const Size kMaxLogsPerPublish = 50;
+        StdMap<ULongLong, StdString> logs = logBuffer->TakeLogsAtMost(kMaxLogsPerPublish);
         IFirebaseOperationsPtr ops;
         {
             std::lock_guard<std::mutex> lock(firebaseOperationsMutex_);

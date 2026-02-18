@@ -281,7 +281,9 @@ class FirebaseOperations : public IFirebaseOperations {
         StdString uniqueKey = MillisToIso8601(nowMs);
         StdString path = GetLogsPath() + "/" + uniqueKey;
         if (!Firebase.RTDB.setJSON(&fbdoLog, path.c_str(), &fbJson)) {
-            logger->Error(Tag::Untagged, StdString("[FirebaseOperations] PublishLogs failed: " + StdString(fbdoLog.errorReason().c_str())));
+            const char* reason = fbdoLog.errorReason().c_str();
+            StdString msg = StdString("[FirebaseOperations] PublishLogs failed: ") + (reason && *reason ? StdString(reason) : StdString("(no reason)"));
+            logger->Error(Tag::Untagged, msg);
             dirty_.store(true);
             return FirebaseOperationResult::Failed;
         }

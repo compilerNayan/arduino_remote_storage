@@ -16,6 +16,9 @@ class ILogBuffer {
 
     /** Take all buffered logs and clear the buffer. Caller typically passes result to IFirebaseOperations::PublishLogs then discards. */
     Public Virtual StdMap<ULongLong, StdString> TakeLogs() = 0;
+
+    /** Take at most maxCount logs (oldest first) and remove them from the buffer. Use to limit payload size and avoid OOM. */
+    Public Virtual StdMap<ULongLong, StdString> TakeLogsAtMost(Size maxCount) = 0;
 };
 
 #endif /* ILOGBUFFER_H */
