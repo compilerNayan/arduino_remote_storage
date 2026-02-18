@@ -49,8 +49,8 @@ class FirebaseOperations : public IFirebaseOperations {
     Private StdString GetLogsPath() const {
         return "/" + deviceDetails_->GetSerialNumber() + "/logs";
     }
-    /** UTC ms when millis() was 0; set on first PublishLogs when time() is available. */
-    Private ULong epochOffsetMs_{0};
+    /** UTC ms when millis() was 0; set when converting pre-NTP keys (key = millis*1000+seq). ULongLong to avoid 32-bit truncation. */
+    Private ULongLong epochOffsetMs_{0};
 
     Private Void EnsureFirebaseBegin() {
         if (firebaseBegun) return;
@@ -154,8 +154,8 @@ class FirebaseOperations : public IFirebaseOperations {
         } else {
             if (epochOffsetMs_ == 0) {
                 time_t now = time(nullptr);
-                if (now > 0) {
-                    epochOffsetMs_ = (ULong)now * 1000 - (ULong)timestampMs;
+                if (now >= 978307200) {
+                    epochOffsetMs_ = (ULongLong)now * 1000ULL - (ULongLong)millis();
                 } else {
                     return "millis_" + std::to_string((unsigned long long)timestampMs);
                 }
